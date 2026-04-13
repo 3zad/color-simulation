@@ -3,7 +3,9 @@ import raylib;
 import std.random;
 import std.stdio;
 import std.conv;
+import std.range : iota;
 import std.math;
+import std.algorithm;
 
 // global variables
 float width = 500;
@@ -11,35 +13,51 @@ float height = 500;
 
 int border = 25;
 int radius = 5;
-int numBalls = 1000;
+int numBalls = 56;
 float cellSize = 250.0f;
 float repelCellSizeFactor = 5.0f;
-float attractFactor = 1.0f / 100.0f;
-float repelFactor;
-int attractThreshold = 15;
-int repelThreshold = 25;
-float friction = 0.97f;
+float attractFactor = 20f;
+float repelFactor = 40f;
+int attractThreshold = 56 + 3;
+int repelThreshold = 56 + 5;
+float friction = 0.4535396f;
 
-float maxSpeed = 5.0f;
+float maxSpeed = 0.25f;
 
-static this()
+void printAllGlobals()
 {
-	repelFactor = attractFactor * 10000.0f;
+	writeln("width: ", width);
+	writeln("height: ", height);
+	writeln("border: ", border);
+	writeln("radius: ", radius);
+	writeln("numBalls: ", numBalls);
+	writeln("cellSize: ", cellSize);
+	writeln("repelCellSizeFactor: ", repelCellSizeFactor);
+	writeln("attractFactor: ", attractFactor);
+	writeln("repelFactor: ", repelFactor);
+	writeln("attractThreshold: ", attractThreshold);
+	writeln("repelThreshold: ", repelThreshold);
+	writeln("friction: ", friction);
 }
 
 struct Ball
 {
 	float x;
 	float y;
+
 	float radius;
 	float speedX;
 	float speedY;
+	
 	Color color;
 
 	void update(float width, float height)
 	{
 		x += speedX;
 		y += speedY;
+
+		speedX = clamp(speedX, -maxSpeed, maxSpeed) * 0.98f;
+		speedY = clamp(speedY, -maxSpeed, maxSpeed) * 0.98f;
 
 		if (x - radius < border && speedX < 0)
 		{
@@ -105,6 +123,8 @@ struct SpatialHash
 	}
 }
 
+
+
 void main()
 {
 	validateRaylibBinding();
@@ -115,51 +135,30 @@ void main()
 	auto rnd = Random(unpredictableSeed);
 
 	Ball[] balls;
-	int colorPos = 0;
 
 	width = GetScreenWidth();
 	height = GetScreenHeight();
-	foreach (i; 0 .. numBalls)
+	foreach (i; iota!ubyte(10, 255, numBalls))
 	{
-		if (numBalls / 3 > i)
+		ubyte r = cast(ubyte) i;
+		foreach (j; iota!ubyte(10, 255, numBalls))
 		{
-			colorPos = 0;
-		}
-		else if (numBalls / 3 * 2 > i)
-		{
-			colorPos = 1;
-		}
-		else
-		{
-			colorPos = 2;
-		}
+			ubyte g = cast(ubyte) j;
+			foreach (k; iota!ubyte(10, 255, numBalls))
+			{
+				ubyte b = cast(ubyte) k;
+				Ball ball;
+				ball.radius = radius;
+				ball.x = uniform(0.0f, width, rnd);
+				ball.y = uniform(0.0f, height, rnd);
+				ball.speedX = uniform(-1.0f, 1.0f, rnd);
+				ball.speedY = uniform(-1.0f, 1.0f, rnd);
 
-		Ball ball;
-		ball.radius = radius;
-		ball.x = uniform(0.0f, width, rnd);
-		ball.y = uniform(0.0f, height, rnd);
-		ball.speedX = uniform(-maxSpeed, maxSpeed, rnd);
-		ball.speedY = uniform(-maxSpeed, maxSpeed, rnd);
+				ball.color = Color(r, g, b);
 
-		ubyte randUbyte = cast(ubyte) uniform(50.0f, 255.0f, rnd);
-		switch (colorPos)
-		{
-		case 0:
-			ball.color = Color(0, randUbyte/2, randUbyte);
-			break;
-		case 1:
-			ball.color = Color(randUbyte, 0, randUbyte/2);
-			break;
-		case 2:
-			ball.color = Color(randUbyte/2, randUbyte, 0);
-			break;
-		default:
-			ball.color = Color(255, 255, 255);
+				balls ~= ball;
+			}
 		}
-
-		ball.color = Color(randUbyte, randUbyte, randUbyte);
-
-		balls ~= ball;
 	}
 
 	int[][] attractedTo;
@@ -192,6 +191,7 @@ void main()
 		SpatialHash sh;
 		sh.cellSize = cellSize;
 
+
 		sh.clear();
 		foreach (i, ref ball; balls)
 			sh.insert(cast(int)i, ball.x, ball.y);
@@ -204,17 +204,26 @@ void main()
 				ball.speedY = ball.speedY / spd * maxSpeed;
 			}
 				
+			ball.speedX *= 0.98f;
+			ball.speedY *= 0.98f;
+
 			foreach (j; attractedTo[i]) {
 				ref ball2 = balls[j];
 				float dx = ball2.x - ball.x;
 				float dy = ball2.y - ball.y;
 				float dist = sqrt(dx*dx + dy*dy);
-				if (dist > 0) {
-					float force = attractFactor * 0.01f / (dist * dist);
-					ball.speedX += dx * force;
-					ball.speedY += dy * force;
+				float touchDist = ball.radius + ball2.radius + 2;
+				if (dist > touchDist) {  // only attract when NOT already touching
+					float force;
+					if (dist < 40.0f)
+						force = attractFactor * 0.1f;
+					else
+						force = attractFactor * 0.1f;
+					ball.speedX += (dx / dist) * force;
+					ball.speedY += (dy / dist) * force;
 				}
 			}
+
 			foreach (j; repelledFrom[i]) {
 				ref ball2 = balls[j];
 				float dx = ball2.x - ball.x;
@@ -232,10 +241,14 @@ void main()
 				if (i == j) continue;
 				ref ball2 = balls[j];
 
-
 				// all balls slightly attracted to the center point
-				ball.speedX += (width/2 - ball.x) * attractFactor * 0.001f;
-				ball.speedY += (height/2 - ball.y) * attractFactor * 0.001f;
+				float cx = ball.x - width/2;
+				float cy = ball.y - height/2;
+				float distFromCenter = sqrt(cx*cx + cy*cy);
+				float targetRadius = 90.0f;
+				float radialForce = (distFromCenter - targetRadius) * 0.0005f;
+				ball.speedX -= (cx / distFromCenter) * radialForce;
+				ball.speedY -= (cy / distFromCenter) * radialForce;
 
 				// --- Collision resolution ---
 				float dx = ball.x - ball2.x;
@@ -245,22 +258,73 @@ void main()
 				{
 					float overlap = ball.radius + ball2.radius - dist;
 					float angle = atan2(dy, dx);
-					float cx = cos(angle) * overlap * 0.5f;
-					float cy = sin(angle) * overlap * 0.5f;
+					cx = cos(angle) * overlap * 0.5f;
+					cy = sin(angle) * overlap * 0.5f;
 
 					ball.x  += cx;  ball.y  += cy;
 					ball2.x -= cx;  ball2.y -= cy;
 
-					float tmpX = ball.speedX;
-					float tmpY = ball.speedY;
-					ball.speedX = ball2.speedX * friction;
-					ball.speedY = ball2.speedY * friction;
-					ball2.speedX = tmpX * friction;
-					ball2.speedY = tmpY * friction;
+					bool isAttracted = false;
+					bool isRepelled = false;
+					foreach (k; attractedTo[i])
+						if (j == k) { isAttracted = true; break; }
+					foreach (k; repelledFrom[i])
+						if (j == k) { isRepelled = true; break; }
+
+					if (isAttracted)
+					{
+						float avgX = (ball.speedX + ball2.speedX) * 0.5f;
+						float avgY = (ball.speedY + ball2.speedY) * 0.5f;
+						float stickDamp = 0.05f;
+						ball.speedX  = avgX * stickDamp;
+						ball.speedY  = avgY * stickDamp;
+						ball2.speedX = avgX * stickDamp;
+						ball2.speedY = avgY * stickDamp;
+					}
+					else if (isRepelled)
+					{
+						float tmpX = ball.speedX;
+						float tmpY = ball.speedY;
+						ball.speedX  = ball2.speedX * friction;
+						ball.speedY  = ball2.speedY * friction;
+						ball2.speedX = tmpX * friction;
+						ball2.speedY = tmpY * friction;
+					}
 				}
 			}
 			ball.update(cast(float)width, cast(float)height);
 		}
+		if (IsKeyPressed(KeyboardKey.KEY_Q))
+			attractFactor *= 2;
+		else if (IsKeyPressed(KeyboardKey.KEY_A))
+			attractFactor /= 2;
+		else if (IsKeyPressed(KeyboardKey.KEY_W))
+			repelFactor *= 2;
+		else if (IsKeyPressed(KeyboardKey.KEY_S))
+			repelFactor /= 2;
+		else if (IsKeyDown(KeyboardKey.KEY_E))
+			friction = min(friction * 1.01, 0.999999f);
+		else if (IsKeyDown(KeyboardKey.KEY_D))
+			friction = max(friction * 0.99, 0.001f);
+		else if (IsKeyDown(KeyboardKey.KEY_R))
+			attractThreshold += 1;
+		else if (IsKeyDown(KeyboardKey.KEY_F))
+			attractThreshold -= 1;
+		else if (IsKeyDown(KeyboardKey.KEY_T))
+			repelThreshold += 1;
+		else if (IsKeyDown(KeyboardKey.KEY_G))
+			repelThreshold -= 1;
+		else if (IsKeyPressed(KeyboardKey.KEY_Z))
+			printAllGlobals();
+		
+
+		// labels with current values
+		DrawText(to!string("Attract: " ~ to!string(attractFactor)).ptr, 10, 10, 30, Colors.WHITE);
+		DrawText(to!string("Repel: " ~ to!string(repelFactor)).ptr, 10, 60, 30, Colors.WHITE);
+		DrawText(to!string("Friction: " ~ to!string(friction)).ptr, 10, 110, 30, Colors.WHITE);
+		DrawText(to!string("Attract Threshold: " ~ to!string(attractThreshold)).ptr, 10, 160, 30, Colors.WHITE);
+		DrawText(to!string("Repel Threshold: " ~ to!string(repelThreshold)).ptr, 10, 210, 30, Colors.WHITE);
+
 		EndDrawing();
 	}
 	CloseWindow();
