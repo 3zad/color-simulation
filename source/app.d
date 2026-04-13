@@ -5,6 +5,28 @@ import std.stdio;
 import std.conv;
 import std.math;
 
+// global variables
+float width = 500;
+float height = 500;
+
+int border = 25;
+int radius = 5;
+int numBalls = 1000;
+float cellSize = 250.0f;
+float repelCellSizeFactor = 5.0f;
+float attractFactor = 1.0f / 100.0f;
+float repelFactor;
+int attractThreshold = 15;
+int repelThreshold = 25;
+float friction = 0.97f;
+
+float maxSpeed = 5.0f;
+
+static this()
+{
+	repelFactor = attractFactor * 10000.0f;
+}
+
 struct Ball
 {
 	float x;
@@ -16,8 +38,6 @@ struct Ball
 
 	void update(float width, float height)
 	{
-		int border = 25;
-
 		x += speedX;
 		y += speedY;
 
@@ -90,17 +110,15 @@ void main()
 	validateRaylibBinding();
 	SetTraceLogLevel(7);
 	SetConfigFlags(ConfigFlags.FLAG_WINDOW_RESIZABLE);
-	InitWindow(1000, 1000, "Hello, Raylib-D!");
+	InitWindow(to!int(width), to!int(height), "Hello, Raylib-D!");
 	SetTargetFPS(6000);
-
 	auto rnd = Random(unpredictableSeed);
 
 	Ball[] balls;
-	int numBalls = 1000;
 	int colorPos = 0;
 
-	float width = GetScreenWidth();
-	float height = GetScreenHeight();
+	width = GetScreenWidth();
+	height = GetScreenHeight();
 	foreach (i; 0 .. numBalls)
 	{
 		if (numBalls / 3 > i)
@@ -117,27 +135,29 @@ void main()
 		}
 
 		Ball ball;
-		ball.radius = 5;
+		ball.radius = radius;
 		ball.x = uniform(0.0f, width, rnd);
 		ball.y = uniform(0.0f, height, rnd);
-		ball.speedX = uniform(-10.0f, 10.0f, rnd);
-		ball.speedY = uniform(-10.0f, 10.0f, rnd);
+		ball.speedX = uniform(-maxSpeed, maxSpeed, rnd);
+		ball.speedY = uniform(-maxSpeed, maxSpeed, rnd);
 
 		ubyte randUbyte = cast(ubyte) uniform(50.0f, 255.0f, rnd);
 		switch (colorPos)
 		{
 		case 0:
-			ball.color = Color(randUbyte, randUbyte, randUbyte);
+			ball.color = Color(0, randUbyte/2, randUbyte);
 			break;
 		case 1:
-			ball.color = Color(randUbyte, randUbyte, randUbyte);
+			ball.color = Color(randUbyte, 0, randUbyte/2);
 			break;
 		case 2:
-			ball.color = Color(randUbyte, randUbyte, randUbyte);
+			ball.color = Color(randUbyte/2, randUbyte, 0);
 			break;
 		default:
 			ball.color = Color(255, 255, 255);
 		}
+
+		ball.color = Color(randUbyte, randUbyte, randUbyte);
 
 		balls ~= ball;
 	}
@@ -152,13 +172,13 @@ void main()
 			if (i == j)
 				continue;
 			float cd = sqrt(cast(float)(
-					(b1.color.r - b2.color.r) ^^ 2 +
-					(
-					b1.color.g - b2.color.g) ^^ 2 +
-					(b1.color.b - b2.color.b) ^^ 2));
-			if (cd < 25)
+				cast(int)(b1.color.r - b2.color.r) ^^ 2 +
+				cast(int)(b1.color.g - b2.color.g) ^^ 2 +
+				cast(int)(b1.color.b - b2.color.b) ^^ 2));
+
+			if (cd < attractThreshold)
 				attractedTo[i] ~= cast(int) j;
-			else if (cd > 30)
+			else if (cd > repelThreshold)
 				repelledFrom[i] ~= cast(int) j;
 		}
 
@@ -170,7 +190,7 @@ void main()
 		height = GetScreenHeight();
 
 		SpatialHash sh;
-		sh.cellSize = 50.0f;
+		sh.cellSize = cellSize;
 
 		sh.clear();
 		foreach (i, ref ball; balls)
@@ -178,32 +198,44 @@ void main()
 
 		foreach (i, ref ball; balls)
 		{
+			float spd = sqrt(ball.speedX^^2 + ball.speedY^^2);
+			if (spd > maxSpeed) {
+				ball.speedX = ball.speedX / spd * maxSpeed;
+				ball.speedY = ball.speedY / spd * maxSpeed;
+			}
+				
+			foreach (j; attractedTo[i]) {
+				ref ball2 = balls[j];
+				float dx = ball2.x - ball.x;
+				float dy = ball2.y - ball.y;
+				float dist = sqrt(dx*dx + dy*dy);
+				if (dist > 0) {
+					float force = attractFactor * 0.01f / (dist * dist);
+					ball.speedX += dx * force;
+					ball.speedY += dy * force;
+				}
+			}
+			foreach (j; repelledFrom[i]) {
+				ref ball2 = balls[j];
+				float dx = ball2.x - ball.x;
+				float dy = ball2.y - ball.y;
+				float dist = sqrt(dx*dx + dy*dy);
+				if (dist > 0) {
+					float force = repelFactor * 0.01f / (dist * dist);
+					ball.speedX -= dx * force;
+					ball.speedY -= dy * force;
+				}
+			}
+
 			foreach (j; sh.nearby(ball.x, ball.y))
 			{
 				if (i == j) continue;
 				ref ball2 = balls[j];
 
-				foreach (k; attractedTo[i])
-				{
-					if (k == j)
-					{
-						float strength = 1.0f / 100.0f;
-						ball.speedX += (ball2.x - ball.x) * strength * 0.01f;
-						ball.speedY += (ball2.y - ball.y) * strength * 0.01f;
-						break;
-					}
-				}
 
-				foreach (k; repelledFrom[i])
-				{
-					if (k == j)
-					{
-						float strength = 1.0f / 500.0f;
-						ball.speedX -= (ball2.x - ball.x) * strength * 0.01f;
-						ball.speedY -= (ball2.y - ball.y) * strength * 0.01f;
-						break;
-					}
-				}
+				// all balls slightly attracted to the center point
+				ball.speedX += (width/2 - ball.x) * attractFactor * 0.001f;
+				ball.speedY += (height/2 - ball.y) * attractFactor * 0.001f;
 
 				// --- Collision resolution ---
 				float dx = ball.x - ball2.x;
@@ -221,10 +253,10 @@ void main()
 
 					float tmpX = ball.speedX;
 					float tmpY = ball.speedY;
-					ball.speedX = ball2.speedX * 0.9f;
-					ball.speedY = ball2.speedY * 0.9f;
-					ball2.speedX = tmpX * 0.9f;
-					ball2.speedY = tmpY * 0.9f;
+					ball.speedX = ball2.speedX * friction;
+					ball.speedY = ball2.speedY * friction;
+					ball2.speedX = tmpX * friction;
+					ball2.speedY = tmpY * friction;
 				}
 			}
 			ball.update(cast(float)width, cast(float)height);
