@@ -1,0 +1,16 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/color-simulation
+color-simulation.so
+color-simulation.dylib
+color-simulation.dll
+color-simulation.a
+color-simulation.lib
+color-simulation-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst

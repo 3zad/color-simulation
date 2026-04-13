@@ -1,0 +1,1 @@
+{"libs" : ["raylib", "bcrypt"], "lflags-posix" : ["-L."], "lflags-osx" : ["-rpath", "@executable_path/"], "lflags-linux" : ["-rpath=$$ORIGIN"], "description" : "A minimal D application.", "name" : "color-simulation", "dependencies" : {"raylib-d" : "~>5.5.3"}, "authors" : ["zacharyalexander"], "copyright" : "Copyright © 2026, zacharyalexander", "license" : "proprietary"}
